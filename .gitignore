@@ -1,0 +1,2 @@
+# Ignore all Verilator/Icarus Verilog build/sim files
+sim/build*
