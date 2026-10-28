@@ -4,9 +4,12 @@ module tb_mult ();
 
   reg [15:0] a, b;
   wire [31:0] prod;
+  reg [31:0] test_prod;
   wire c_out;
 
-  mult_bw_16x16 i_mult_16x16 (
+  mult_bw_16x16 #(
+      .sign(1)
+  ) i_mult_16x16 (
       .a(a),
       .x(b),
       .y(prod),
@@ -23,7 +26,18 @@ module tb_mult ();
 
     a = 16'd595;
     b = 16'd123;
+    #5;
 
+    a = 16'd32767;
+    b = 16'd1;
+    #5;
+
+    b = 16'd32767;
+    a = 16'd1;
+    #5;
+
+    b = 16'd16383;
+    a = 16'd1;
     #5;
 
     for (int i = 0; i < 100; i = i + 1) begin
@@ -31,9 +45,16 @@ module tb_mult ();
       a = $urandom_range(0, 2 ** 16 - 1);
       b = $urandom_range(0, 2 ** 16 - 1);
       /* verilator lint_on WIDTHTRUNC */
+
       #5;
+      assert (prod == (a * b))
+      else $error("Mismatch: a=%0d, b=%0d, expected=%0d, got=%0d", a, b, (a * b), prod);
     end
     $finish;
+  end
+
+  always @(*) begin
+    test_prod = a * b;
   end
 
 endmodule

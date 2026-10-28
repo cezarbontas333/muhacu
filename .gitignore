@@ -1,2 +1,5 @@
 # Ignore all Verilator/Icarus Verilog build/sim files
 sim/build*
+
+# Preferences and other configuration files for tools
+*.gtkw

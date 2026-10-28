@@ -2,10 +2,16 @@
 /*
     Multiplicator using Baugh-Wooley scheme for tree reduction of
     partial sums. For this, a carry-save adder scheme is used for 
-    reducing each partial sum, 
+    reducing each partial sum based on a balanced delay reduction slices.
+
+    This additionally has a mode of operation that reverts to a normal
+    multiplication scheme for unsigned numbers (useful if composed 32x32
+    bit multiplications are done, and LSB do not have a sign).
 */
 
-module mult_bw_16x16(
+module mult_bw_16x16 #(
+    parameter sign = 1
+    ) (
     input [15:0] a,
     input [15:0] x,
     output [31:0] y,
@@ -15,21 +21,30 @@ module mult_bw_16x16(
     /*
         Generate parital sums. For the first and last sum, an extra bit
         will need to be taken into account when bit reduction is done.
+        Parameter sign is used to determine if the multiplicator is signed or unsigned.
     */
     wire[15:0] partial [0:15];
-    assign partial[0] = a & {16{x[0]}};
     generate
-        genvar i;
-        for (i = 1; i < 15; i = i + 1) begin
-            assign partial[i] = {a[15] & ~x[i], a[14:0] & {15{x[i]}}};
+        if (sign) begin
+            genvar i;
+            for (i = 0; i < 15; i = i + 1) begin
+                assign partial[i] = {~(a[15] & x[i]), a[14:0] & {15{x[i]}}};
+            end
+            assign partial[15] = {a[15] & x[15], ~(a[14:0] & {15{x[15]}})};
+        end
+        else begin
+            genvar i;
+            for (i = 0; i < 16; i = i + 1) begin
+                assign partial[i] = {a & {16{x[i]}}};
+            end
         end
     endgenerate
-    assign partial[15] = {a[15] & x[15], a[14:0] & {15{~x[15]}}};
+    
     
     // Final results can be composed paritally before last addition.
     wire[31:0] final_sums [0:1];
     assign final_sums[0][1:0] = partial[0][1:0];
-    assign final_sums[1][1] = partial[1][1];
+    assign final_sums[1][1] = partial[1][0];
     /*
         Baugh-Wooley reduction tree. For the first stage, additional 
         1s are added on the first and last partial sums.
@@ -170,9 +185,14 @@ module mult_bw_16x16(
         .out_carry(partial_stage1[3][16])
     );
 
+    wire bw_sign;
+    generate
+        if (sign) assign bw_sign = 1'b1;
+        else assign bw_sign = 1'b0;
+    endgenerate
     // Completed with 1 bit for the Baugh-Wooley scheme.
     pc_11x9 i_pc_st1_col16_1 (
-        .in_col({1'b1, partial[1][15], partial[2][14], partial[3][13], partial[4][12], partial[5][11], partial[6][10], partial[7][9], partial[8][8], partial[9][7], partial[10][6]}),
+        .in_col({bw_sign, partial[1][15], partial[2][14], partial[3][13], partial[4][12], partial[5][11], partial[6][10], partial[7][9], partial[8][8], partial[9][7], partial[10][6]}),
         .in_carry({carry_stage1[0][16], carry_stage1[1][16], carry_stage1[2][16], carry_stage1[3][16], carry_stage1[4][16], carry_stage1[5][16], carry_stage1[6][16], carry_stage1[7][16]}),
         .out(partial_stage1[0][16]),
         .out_carry({carry_stage1[0][17], carry_stage1[1][17], carry_stage1[2][17], carry_stage1[3][17], carry_stage1[4][17], carry_stage1[5][17], carry_stage1[6][17], carry_stage1[7][17], partial_stage1[1][17]})
@@ -298,7 +318,11 @@ module mult_bw_16x16(
         MSB from the last partial product is completed with 1, which can be directly
         added to the final sum since it won't be propagated.
     */
-    assign final_sums[0][31] = 1'b1;
+    generate
+        if (sign) assign final_sums[0][31] = 1'b1;
+        else assign final_sums[0][31] = 1'b0;
+    endgenerate
+    
 
     // STAGE 2
     wire[31:0] partial_stage2 [0:6];
@@ -394,7 +418,7 @@ module mult_bw_16x16(
         .out_carry(partial_stage2[1][19])
     );
 
-    assign {partial_stage2[2][19], partial_stage2[1][18]} = partial[14][4] + partial[15][3];
+    assign {partial_stage2[2][19], partial_stage2[2][18]} = partial[14][4] + partial[15][3];
 
     pc_6x4 i_pc_st2_col20_1 (
         .in_col({partial_stage1[0][20], partial_stage1[1][20], partial_stage1[2][20], partial_stage1[3][20], partial_stage1[4][20], partial_stage1[5][20]}),
@@ -436,7 +460,7 @@ module mult_bw_16x16(
     );
 
     pc_6x4 i_pc_st2_col26 (
-        .in_col({partial_stage1[0][26], partial_stage1[1][26], partial_stage1[2][26], partial_stage1[3][26], partial_stage1[4][26], partial_stage1[5][26]}),
+        .in_col({partial_stage1[0][26], partial_stage1[1][26], partial_stage1[2][26], partial_stage1[3][26], partial_stage1[4][26], partial[14][12]}),
         .in_carry(3'b000),
         .out(partial_stage2[0][26]),
         .out_carry({partial_stage2[1][27], partial_stage2[2][27], partial_stage2[3][27], partial_stage2[4][27]})
@@ -531,7 +555,7 @@ module mult_bw_16x16(
     pc_3x2 i_pc_st3_col21_2 (
         .in_col({partial_stage2[3][21], partial_stage2[4][21], partial_stage2[5][21]}),
         .out(partial_stage3[2][21]),
-        .out_carry(partial_stage3[3][22])
+        .out_carry(partial_stage3[2][22])
     );
 
     pc_3x2 i_pc_st3_col22 (
@@ -553,7 +577,7 @@ module mult_bw_16x16(
     );
 
     pc_3x2 i_pc_st3_col27 (
-        .in_col({partial_stage2[0][27], partial_stage1[1][27], partial_stage1[2][27]}),
+        .in_col({partial_stage2[0][27], partial_stage2[1][27], partial_stage2[2][27]}),
         .out(partial_stage3[0][27]),
         .out_carry(partial_stage3[1][28])
     );
@@ -588,7 +612,7 @@ module mult_bw_16x16(
     );
 
     pc_3x2 i_pc_st4_col22 (
-        .in_col({partial_stage3[0][22], partial_stage3[1][22], partial_stage3[2][22]}),
+        .in_col({partial_stage3[0][22], partial_stage3[1][22], partial_stage2[2][22]}),
         .out(partial_stage4[0][22]),
         .out_carry(partial_stage4[1][23])
     );
@@ -621,7 +645,7 @@ module mult_bw_16x16(
 
     assign {final_sums[1][30], final_sums[0][29]} = partial_stage3[1][29] + partial_stage2[0][29];
 
-    assign {final_sums[1][31], final_sums[0][30]} = partial_stage2[1][30] + partial[0][15];
+    assign {final_sums[1][31], final_sums[0][30]} = partial_stage2[1][30] + partial[15][15];
 
     // STAGE 4; no more partial products as all ranks will contain only 2 bits
 
@@ -633,6 +657,12 @@ module mult_bw_16x16(
 
     assign {final_sums[1][21], final_sums[0][20]} = partial_stage4[0][20] + partial_stage4[1][20];
 
+    pc_3x2 i_pc_st5_col21 (
+        .in_col({partial_stage4[0][21], partial_stage4[1][21], partial_stage2[6][21]}),
+        .out(final_sums[0][21]),
+        .out_carry(final_sums[1][22])
+    );
+
     pc_3x2 i_pc_st5_col22 (
         .in_col({partial_stage4[0][22], partial_stage4[1][22], partial_stage3[2][22]}),
         .out(final_sums[0][22]),
@@ -643,9 +673,10 @@ module mult_bw_16x16(
 
     assign {final_sums[1][25], final_sums[0][24]} = partial_stage4[0][24] + partial_stage4[1][24];
 
-    assign {final_sums[1][26], final_sums[0][25]} = partial_stage4[0][25] + partial_stage4[1][25];
+    assign {final_sums[1][26], final_sums[0][25]} = partial_stage3[0][25] + partial_stage4[1][25];
 
-    assign {final_sums[1][27], final_sums[0][26]} = partial_stage4[1][26] + partial_stage3[0][26];    
+    // Last bits from the final sums which were not initialized before have to be now set to 0.
+    assign {final_sums[1][19:18], final_sums[1][12], final_sums[1][7:6], final_sums[1][3:2], final_sums[1][0]} = 8'b0000_0000;
 
     /*
         Last stage is final sum using carry-lookahead adder. Latency
@@ -655,7 +686,7 @@ module mult_bw_16x16(
         .len(2)) i_final_add_32x32 (
         .a(final_sums[0]),
         .b(final_sums[1]),
-        .c_in(1'b1),
+        .c_in(1'b0),
         .out(y),
         .c_out(c_out)
     );

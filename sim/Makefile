@@ -31,12 +31,12 @@ TB_DIR           ?= ../tb
 TB_TOP           ?=
 
 # Tool options
-LINT_OPTIONS     ?=
+LINT_OPTIONS     ?= --Wall -Wno-fatal
 VERILOG_OPTIONS  ?=
 VVP_OPTIONS      ?=
 
 # Waveform viewer
-VIEWER           ?= surfer
+VIEWER           ?= gtkwave
 
 # Output configuration
 TIMESTAMP        := $(shell date +%Y%m%d_%H%M%S)
@@ -88,7 +88,7 @@ lint: check_tb
 	@echo "Output directory: $(OUT_DIR)"
 	@echo "============================================================"
 	@set -o pipefail; \
-	verilator --lint-only --Wall \
+	verilator --lint-only \
 		$(LINT_OPTIONS) \
 		--top-module $(basename $(notdir $(TB_TOP))) \
 		$(RTL_FILES) $(TB_FILE) \
